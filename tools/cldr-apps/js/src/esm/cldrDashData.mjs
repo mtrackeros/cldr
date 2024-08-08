@@ -1,5 +1,5 @@
 /*
- * cldrDash: encapsulate dashboard data.
+ * cldrDashData: encapsulate dashboard data.
  */
 import * as cldrAjax from "./cldrAjax.mjs";
 import * as cldrClient from "./cldrClient.mjs";
@@ -254,7 +254,7 @@ function doFetch(callback) {
   const locale = cldrStatus.getCurrentLocale();
   const level = cldrCoverage.effectiveName(locale);
   if (!locale || !level) {
-    fetchErr = "Please choose a locale and a coverage level first.";
+    fetchErr = cldrText.get("dash_needs_locale_and_coverage");
     return;
   }
   const url = `api/summary/dashboard/${locale}/${level}`;
@@ -473,10 +473,10 @@ async function downloadXlsx(data, locale, cb) {
 
 /**
  * @param {string} locale locale to list for
- * @returns {Array<CheckStatusSummary>}
+ * @returns {Promise<Array<CheckStatusSummary>>}
  */
 async function getLocaleErrors(locale) {
-  const client = cldrClient.getClient();
+  const client = await cldrClient.getClient();
   return await client.apis.voting.getLocaleErrors({ locale });
 }
 

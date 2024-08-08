@@ -10,10 +10,52 @@ import * as cldrForumFilter from "./cldrForumFilter.mjs";
 import * as cldrForumPanel from "./cldrForumPanel.mjs";
 import * as cldrForumType from "./cldrForumType.mjs";
 import * as cldrLoad from "./cldrLoad.mjs";
-import * as cldrRetry from "./cldrRetry.mjs";
 import * as cldrStatus from "./cldrStatus.mjs";
 import * as cldrSurvey from "./cldrSurvey.mjs";
 import * as cldrText from "./cldrText.mjs";
+
+class PostInfo {
+  constructor(postType) {
+    this.postType = postType;
+
+    this.locale = null;
+    this.xpstrid = null;
+    this.value = null;
+    this.subject = "";
+    this.willFlag = false;
+    this.replyTo = -1;
+    this.parentPost = null;
+  }
+
+  /**
+   * Set the parent data for a reply.
+   *
+   * @param {Object} post - the data (as received from the back end) for the post to which
+   * this is a reply. It is NOT a PostInfo object!
+   */
+  setReplyTo(post) {
+    this.replyTo = post.id;
+    this.parentPost = post;
+    // Copy these values from the parent.
+    this.setLocalePathValueSubject(
+      post.locale,
+      post.xpath,
+      post.value,
+      post.subject
+    );
+  }
+
+  setLocalePathValueSubject(locale, xpstrid, value, subject) {
+    this.locale = locale;
+    this.xpstrid = xpstrid;
+    this.value = value;
+    this.subject = subject;
+  }
+
+  setWillFlagTrue() {
+    this.willFlag = true;
+  }
+}
 
 /**
  * Encapsulate this class name -- caution: it's used literally in surveytool.css
@@ -85,15 +127,7 @@ function load() {
     });
     const surveyUser = cldrStatus.getSurveyUser();
     const userId = surveyUser && surveyUser.id ? surveyUser.id : 0;
-    const params = {
-      name: "forum",
-      exports: {
-        appendLocaleLink: cldrLoad.appendLocaleLink,
-        handleDisconnect: cldrRetry.handleDisconnect,
-        clickToSelect: cldrDom.clickToSelect,
-      },
-    };
-    loadForum(curLocale, userId, forumMessage, params);
+    loadForum(curLocale, userId, forumMessage);
   }
 }
 
@@ -103,9 +137,8 @@ function load() {
  * @param locale the locale string, like "fr_CA" (cldrStatus.getCurrentLocale())
  * @param userId the id of the current user
  * @param forumMessage the forum message
- * @param params an object with various properties such as exports, special, name, ...
  */
-function loadForum(locale, userId, forumMessage, params) {
+function loadForum(locale, userId, forumMessage) {
   setLocale(locale);
   const url = getLoadForumUrl();
   const errorHandler = function (err) {
@@ -206,40 +239,30 @@ function setUserCanPost(canPost) {
 /**
  * Make a new forum post or a reply.
  *
- * @param params the object containing various parameters: locale, xpath, replyTo, replyData, ...
+ * @param {PostInfo} pi
  */
-function openPostOrReply(params) {
-  const isReply = params.replyTo && params.replyTo >= 0 ? true : false;
-  const replyTo = isReply ? params.replyTo : -1;
-  const parentPost = isReply && params.replyData ? params.replyData : null;
-  const rootPost = parentPost ? getThreadRootPost(parentPost) : null;
-  const locale = isReply ? rootPost.locale : params.locale ? params.locale : "";
-  const xpath = isReply ? rootPost.xpath : params.xpath ? params.xpath : "";
-  const subjectParam = params.subject ? params.subject : "";
-  const postType = params.postType ? params.postType : null;
-  const subject = makePostSubject(isReply, rootPost, subjectParam);
-  const value = params.value
-    ? params.value
-    : rootPost && rootPost.value
-    ? rootPost.value
-    : null;
+function openPostOrReply(pi) {
+  const isReply = pi.replyTo > 0;
+  const rootPost = isReply ? getThreadRootPost(pi.parentPost) : null;
+  const subject = makePostSubject(isReply, rootPost, pi.subject);
   const root = isReply ? rootPost.id : -1;
   const open = isReply ? rootPost.open : true;
-  const typeLabel = makePostTypeLabel(postType, isReply);
+  const typeLabel = makePostTypeLabel(pi.postType, isReply);
   const html = makePostHtml(
-    postType,
+    pi.postType,
     typeLabel,
-    locale,
-    xpath,
+    pi.locale,
+    pi.xpstrid,
     subject,
-    replyTo,
+    pi.replyTo,
     root,
     open,
-    value
+    pi.value,
+    pi.willFlag
   );
-  const text = prefillPostText(postType, value);
+  const text = prefillPostText(pi.postType, pi.value);
 
-  openPostWindow(html, text, parentPost);
+  openPostWindow(html, text, pi.parentPost);
 }
 
 /**
@@ -254,6 +277,7 @@ function openPostOrReply(params) {
  * @param root the post id of the original post in the thread, or -1
  * @param open true or false, is this thread open
  * @param value the value that was requested in the root post, or null
+ * @param willFlag {Boolean} if true, this post will cause the item to be flagged
  * @return the html
  */
 function makePostHtml(
@@ -265,12 +289,14 @@ function makePostHtml(
   replyTo,
   root,
   open,
-  value
+  value,
+  willFlag
 ) {
+  const reminder = willFlag ? "flag_must_have_reason" : "forum_remember_vote";
   let html = "";
 
   html += '<div id="postSubject" class="topicSubject">' + subject + "</div>\n";
-  html += "<div>" + cldrText.get("forum_remember_vote") + "</div>\n";
+  html += "<div>" + cldrText.get(reminder) + "</div>\n";
   html += '<div class="postTypeLabel">' + typeLabel + "</div>\n";
   html += '<form role="form" id="post-form">\n';
   html += '<div class="form-group">\n';
@@ -334,6 +360,7 @@ function prefillPostText(postType, value) {
  * Open a window displaying the form for creating a post
  *
  * @param html the main html for the form
+ * @param text the pre-filled user-editable text for the form
  * @param parentPost the post object, if any, to which this is a reply, for display at the bottom of the window
  *
  * Reference: Bootstrap.js post-modal: https://getbootstrap.com/docs/4.1/components/modal/
@@ -363,29 +390,43 @@ function openPostWindow(html, text, parentPost) {
  * @param event
  */
 function submitPost(event) {
-  const text = $("#post-form textarea[name=text]").val();
-  if (text) {
-    reallySubmitPost(text);
-  }
   event.preventDefault();
   event.stopPropagation();
+  const form = getFormValues();
+  if (formIsAcceptable(form)) {
+    $("#post-form button").fadeOut();
+    cldrForumPanel.clearCache();
+    sendPostRequest(form);
+  } else {
+    // Call the user's attention to the bogus text area by winking it
+    $("#post-form textarea").fadeTo(1000, 0).fadeTo(1000, 1);
+  }
 }
 
 /**
- * Submit a forum post
+ * Is the given form data acceptable?
  *
- * @param text the non-empty body of the message
+ * @param {Object} form
+ * @returns {Boolean} true if acceptable
  */
-function reallySubmitPost(text) {
-  $("#post-form button").fadeOut();
-  cldrForumPanel.clearCache();
-  const form = getFormValues(text);
-  sendPostRequest(form);
+function formIsAcceptable(form) {
+  if (!form.text.trim()) {
+    // the text field is empty or all whitespace
+    return false;
+  }
+  if (form.postType === cldrForumType.REQUEST) {
+    const prefill = cldrText.sub("forum_prefill_request", [form.value]);
+    if (form.text.trim() === prefill.trim()) {
+      // the text field for a Request matches the pre-fill
+      return false;
+    }
+  }
+  return true;
 }
 
-function getFormValues(text) {
+function getFormValues() {
   return {
-    text: text,
+    text: $("#post-form textarea[name=text]").val(),
     locale: $("#post-form input[name=_]").val(),
     open: $("#post-form input[name=open]").val(),
     postType: $("#post-form input[name=postType]").val(),
@@ -827,7 +868,15 @@ function addNewPostButtons(el, locale, couldFlag, xpstrid, code, value) {
     null /* rootPost */,
     value
   );
-
+  // Only an enabled REQUEST button can really cause a path to be flagged.
+  const reallyCanFlag =
+    couldFlag && value && Object.keys(options).includes(cldrForumType.REQUEST);
+  if (reallyCanFlag) {
+    const message = cldrText.get("mustflag_explain_msg");
+    cldrSurvey.addIcon(el, "i-stop");
+    el.appendChild(cldrDom.createChunk(message, "span", ""));
+    el.appendChild(document.createElement("p"));
+  }
   Object.keys(options).forEach(function (postType) {
     el.appendChild(
       makeOneNewPostButton(
@@ -877,9 +926,8 @@ function makeOneNewPostButton(
   // REQUEST is only enabled if there is a non-null value (which the user voted for).
   const disabled = postType === cldrForumType.REQUEST && value === null;
   // Only an enabled REQUEST button can really cause a path to be flagged.
-  const reallyCanFlag =
-    couldFlag && postType === cldrForumType.REQUEST && !disabled;
-  const buttonClass = reallyCanFlag
+  const willFlag = couldFlag && postType === cldrForumType.REQUEST && !disabled;
+  const buttonClass = willFlag
     ? "addPostButton forumNewPostFlagButton btn btn-default btn-sm"
     : "addPostButton forumNewButton btn btn-default btn-sm";
 
@@ -898,16 +946,15 @@ function makeOneNewPostButton(
           if (o.result && o.result.ph) {
             subj = xpathMap.formatPathHeader(o.result.ph);
           }
-          if (reallyCanFlag) {
+          if (willFlag) {
             subj += " (Flag for review)";
           }
-          openPostOrReply({
-            locale: locale,
-            xpath: xpstrid,
-            subject: subj,
-            postType: postType,
-            value: value,
-          });
+          const pi = new PostInfo(postType);
+          pi.setLocalePathValueSubject(locale, xpstrid, value, subj);
+          if (willFlag) {
+            pi.setWillFlagTrue();
+          }
+          openPostOrReply(pi);
         }
       );
       cldrEvent.stopPropagation(e);
@@ -924,15 +971,9 @@ function makeOneReplyButton(post, postType, label) {
     "addPostButton btn btn-default btn-sm"
   );
   cldrDom.listenFor(replyButton, "click", function (e) {
-    openPostOrReply({
-      /*
-       * Don't specify locale/xpath/subject/value/open for reply. Instead they will be set to
-       * match the original post in the thread.
-       */
-      replyTo: post.id,
-      replyData: post,
-      postType: postType,
-    });
+    const pi = new PostInfo(postType);
+    pi.setReplyTo(post);
+    openPostOrReply(pi);
     cldrEvent.stopPropagation(e);
     return false;
   });

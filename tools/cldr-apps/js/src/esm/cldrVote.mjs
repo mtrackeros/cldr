@@ -117,7 +117,7 @@ async function handleWiredClick(tr, theRow, vHash, newValue, button) {
     tr.myProposal = null; // mark any pending proposal as invalid.
   }
   tr.wait = true;
-  cldrInfo.reset();
+  cldrTable.resetLastShown();
   theRow.proposedResults = null;
   if (CLDR_VOTE_DEBUG) {
     logVote(tr.rowHash, vHash, value);
@@ -378,7 +378,7 @@ function showProposedItem(inTd, tr, theRow, value, tests, json) {
     cldrNotify.error("Not submitted", description);
     return;
   } else {
-    setDivClass(ourDiv, testKind);
+    cldrTable.setDivClassSelected(ourDiv, testKind);
   }
 
   if (testKind || !ourItem) {
@@ -424,22 +424,10 @@ function showProposedItem(inTd, tr, theRow, value, tests, json) {
       }
       return retFn;
     };
-    cldrInfo.listen(null, tr, ourDiv, ourShowFn);
+    cldrTable.listen(null, tr, ourDiv, ourShowFn);
     cldrInfo.showRowObjFunc(tr, ourDiv, ourShowFn);
   }
   return false;
-}
-
-function setDivClass(div, testKind) {
-  if (!testKind) {
-    div.className = "d-item";
-  } else if (testKind == "Warning") {
-    div.className = "d-item-warn";
-  } else if (testKind == "Error") {
-    div.className = "d-item-err";
-  } else {
-    div.className = "d-item";
-  }
 }
 
 /**
@@ -607,7 +595,6 @@ export {
   getTestKind,
   handleWiredClick,
   isBusy,
-  setDivClass,
   setVoteLevelChanged,
   wireUpButton,
   wrapRadio,
